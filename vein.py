@@ -2430,6 +2430,42 @@ def _selftest():
     return 0 if passed == total and total > 0 else 1
 
 
+def compare_files(schema, before, after):
+    """Compare decoded leaves at matching schema paths and retain both byte anchors."""
+    import hashlib
+
+    def leaves(node, path, output):
+        if not isinstance(node, dict):
+            return
+        for name, child in node.get("fields", {}).items():
+            leaves(child, path + (name,), output)
+        for i, child in enumerate(node.get("items", [])):
+            leaves(child, path + (i,), output)
+        if "value" in node:
+            output[path] = {k: node[k] for k in ("type", "value", "offset", "size") if k in node}
+
+    sides = []
+    identities = []
+    for filename in (before, after):
+        with open(filename, "rb") as stream:
+            data = stream.read()
+        fields = {}
+        leaves(schema.parse(data), (), fields)
+        sides.append(fields)
+        identities.append(dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest()))
+    left, right = sides
+    changes = []
+    for path in dict.fromkeys((*left, *right)):
+        a, b = left.get(path), right.get(path)
+        if a == b:
+            continue
+        kind = ("added" if a is None else "removed" if b is None else
+                "relocated" if all(a.get(k) == b.get(k) for k in ("type", "value", "size"))
+                else "modified")
+        changes.append(dict(path=list(path), kind=kind, before=a, after=b))
+    return dict(before=identities[0], after=identities[1], changes=changes)
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["--selftest"]:
@@ -2451,8 +2487,19 @@ def main(argv=None):
     t = sub.add_parser("thread-index", help="decode an Outlook Thread-Index (base64 or hex)")
     t.add_argument("value")
     t.add_argument("--json", action="store_true")
+    diff = sub.add_parser("diff", help="compare decoded fields and their byte anchors")
+    for arg in ("spec", "before", "after"):
+        diff.add_argument(arg)
     args = ap.parse_args(argv)
 
+    if args.cmd == "diff":
+        try:
+            result = compare_files(compile_file(_resolve_spec(args.spec)), args.before, args.after)
+            _out(to_json(result, indent=2))
+            return 0
+        except (VeinError, ParseError, OSError) as error:
+            print(f"diff error: {error}", file=sys.stderr)
+            return 2
     if args.cmd == "specs":
         for name, path, desc in list_specs():
             _out(f"{name:<22} {desc}")
