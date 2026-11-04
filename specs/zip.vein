@@ -1,0 +1,135 @@
+# zip.vein - ZIP archive: local headers, central directory (via EOCD search), EOCD + comment, extra fields (0x5455 UT decoded)
+#
+# records  : local file headers read in order from offset 0; the array stops cleanly (eof_or_fail)
+#            at the first non-local record, normally the central directory - stopped.offset says where.
+# eocd     : found with search(b"PK\x05\x06") = LAST occurrence (an archive comment containing that
+#            signature would mislead it; ZIP64 locators/records are not decoded).
+# central  : central directory entries read out-of-line at eocd.cd_offset; each entry follows its
+#            local_header_offset with an `at` block (local header + data anchor sized by the central dir).
+endian le
+root file
+
+enum zip_method {
+  0: stored, 1: shrunk, 6: imploded, 8: deflate, 9: deflate64,
+  12: bzip2, 14: lzma, 93: zstd, 95: xz, 98: ppmd, 99: aes
+}
+
+enum extra_id {
+  0x0001: zip64, 0x000a: ntfs, 0x5455: ext_timestamp, 0x7855: info_zip_unix,
+  0x7875: unix_uid_gid, 0x7075: unicode_path, 0x6375: unicode_comment
+}
+
+type file {
+  records:  zip_local[] until eof_or_fail
+  let eocd_pos = search(b"PK\x05\x06")
+  eocd:     eocd at eocd_pos if eocd_pos >= 0
+  central:  cd_entry[eocd.cd_count_total] at eocd.cd_offset if eocd_pos >= 0
+}
+
+type zip_local {
+  magic:      u32  == 0x04034b50        # assertion: parse error with offset if mismatch
+  version:    u16
+  flags:      u16
+  method:     u16  enum zip_method
+  mtime:      u16
+  mdate:      u16
+  crc32:      u32
+  csize:      u32
+  usize:      u32
+  name_len:   u16
+  extra_len:  u16
+  name:       str(name_len, flags & 0x800 != 0 ? "utf-8" : "cp437")
+  extras:     extra_field[] until eof size(extra_len)
+  data:       bytes(csize)
+  descriptor: data_descriptor if flags & 8 != 0
+  let dos_date = (mdate >> 9) + 1980    # computed field (not consumed from bytes)
+  let modified = dosdatetime(mdate, mtime)
+  let crc_ok = method == zip_method.stored ? crc32(data) == crc32 : (method == zip_method.deflate ? crc32(inflate(data)) == crc32 : null)
+}
+
+type data_descriptor {
+  if pos + 4 <= size and u32(pos) == 0x08074b50 {
+    signature: u32
+  }
+  crc32: u32
+  csize: u32
+  usize: u32
+}
+
+type extra_field {
+  id:        u16 enum extra_id
+  data_size: u16
+  if id == extra_id.ext_timestamp {
+    ut: ext_timestamp size(data_size)
+  } else {
+    data: bytes(data_size)
+  }
+}
+
+# Info-ZIP extended timestamp: flags bit0 mtime, bit1 atime, bit2 ctime (signed 32-bit unix seconds).
+# Central-directory copies usually carry only mtime even when the flags say more; `pos + 4 <= size` handles that.
+type ext_timestamp {
+  flags: u8
+  mtime: i32 if flags & 1 != 0 and pos + 4 <= size
+  atime: i32 if flags & 2 != 0 and pos + 4 <= size
+  ctime: i32 if flags & 4 != 0 and pos + 4 <= size
+  let mtime_utc = mtime != null ? unix(mtime) : null
+  let atime_utc = atime != null ? unix(atime) : null
+  let ctime_utc = ctime != null ? unix(ctime) : null
+}
+
+type zip_local_header {
+  magic:      u32  == 0x04034b50
+  version:    u16
+  flags:      u16
+  method:     u16  enum zip_method
+  mtime:      u16
+  mdate:      u16
+  crc32:      u32
+  csize:      u32
+  usize:      u32
+  name_len:   u16
+  extra_len:  u16
+  name:       str(name_len, flags & 0x800 != 0 ? "utf-8" : "cp437")
+  extras:     extra_field[] until eof size(extra_len)
+}
+
+type cd_entry {
+  magic:               u32 == 0x02014b50
+  version_made_by:     u16
+  version_needed:      u16
+  flags:               u16
+  method:              u16 enum zip_method
+  mtime:               u16
+  mdate:               u16
+  crc32:               u32
+  csize:               u32
+  usize:               u32
+  name_len:            u16
+  extra_len:           u16
+  comment_len:         u16
+  disk_start:          u16
+  internal_attr:       u16
+  external_attr:       u32
+  local_header_offset: u32
+  name:                str(name_len, flags & 0x800 != 0 ? "utf-8" : "cp437")
+  extras:              extra_field[] until eof size(extra_len)
+  comment:             bytes(comment_len)
+  let modified = dosdatetime(mdate, mtime)
+  at local_header_offset {
+    local: zip_local_header
+    data:  skip(csize)              # exact anchor of the member data, sized by the central directory
+  }
+}
+
+type eocd {
+  magic:          u32 == 0x06054b50
+  disk_num:       u16
+  cd_disk:        u16
+  cd_count_disk:  u16
+  cd_count_total: u16
+  cd_size:        u32
+  cd_offset:      u32
+  comment_len:    u16
+  comment:        bytes(comment_len)
+}

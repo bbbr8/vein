@@ -1,0 +1,119 @@
+# jpeg.vein - JPEG/JFIF marker segments: SOI, APPn (APP0 JFIF, APP1 Exif header), DQT tables, SOF0-3 dimensions, SOS (stop)
+#
+# Parsing stops after the SOS header (or EOI); scan_offset is where entropy-coded data begins.
+# Fill bytes (0xFF 0xFF ...) between segments are not handled.
+endian be
+root file
+
+enum jpeg_marker {
+  0xC0: sof0, 0xC1: sof1, 0xC2: sof2, 0xC3: sof3, 0xC4: dht, 0xCC: dac,
+  0xD0: rst0, 0xD1: rst1, 0xD2: rst2, 0xD3: rst3, 0xD4: rst4, 0xD5: rst5, 0xD6: rst6, 0xD7: rst7,
+  0xD8: soi, 0xD9: eoi, 0xDA: sos, 0xDB: dqt, 0xDD: dri,
+  0xE0: app0, 0xE1: app1, 0xE2: app2, 0xE3: app3, 0xE4: app4, 0xE5: app5, 0xE6: app6, 0xE7: app7,
+  0xE8: app8, 0xE9: app9, 0xEA: app10, 0xEB: app11, 0xEC: app12, 0xED: app13, 0xEE: app14, 0xEF: app15,
+  0xFE: com
+}
+
+type file {
+  soi:      u16 == 0xFFD8
+  segments: segment[] until _.marker == jpeg_marker.sos or _.marker == jpeg_marker.eoi
+  let scan_offset = pos                  # first byte of entropy-coded data (after the SOS header)
+}
+
+type segment {
+  prefix: u8 == 0xFF
+  marker: u8 enum jpeg_marker
+  if not (marker in [0x01, 0xD8, 0xD9] or (marker >= 0xD0 and marker <= 0xD7)) {
+    length: u16
+    if marker == jpeg_marker.dqt {
+      dqt: dqt size(length - 2)
+    } else if marker in [0xC0, 0xC1, 0xC2, 0xC3] {
+      sof: sof size(length - 2)
+    } else if marker == jpeg_marker.app0 {
+      app0: app0 size(length - 2)
+    } else if marker == jpeg_marker.app1 {
+      app1: app1 size(length - 2)
+    } else if marker == jpeg_marker.sos {
+      sos: sos size(length - 2)
+    } else {
+      data: bytes(length - 2)
+    }
+  }
+}
+
+type dqt {
+  tables: dqt_table[] until eof
+}
+
+type dqt_table {
+  bitfield {
+    precision: bits(4)                   # 0 = 8-bit values, 1 = 16-bit values
+    table_id:  bits(4)
+  }
+  if precision == 0 {
+    values: u8[64]
+  } else {
+    values: u16[64]
+  }
+}
+
+type sof {
+  precision:      u8
+  height:         u16
+  width:          u16
+  num_components: u8
+  components:     sof_component[num_components]
+}
+
+type sof_component {
+  id: u8
+  bitfield { h_sampling: bits(4); v_sampling: bits(4) }
+  quant_table: u8
+}
+
+type app0 {
+  identifier: cstr("latin-1")
+  if identifier == "JFIF" {
+    version_major: u8
+    version_minor: u8
+    units:         u8
+    x_density:     u16
+    y_density:     u16
+    thumb_width:   u8
+    thumb_height:  u8
+  }
+  rest: bytes(size - pos)
+}
+
+type app1 {
+  let is_exif = size >= 6 and bytes_at(0, 6) == b"Exif\x00\x00"
+  if is_exif {
+    exif_header: bytes(6)
+    restore {
+      byte_order: str(2, "ascii")
+      if byte_order == "II" {
+        tiff_magic:  u16le
+        ifd0_offset: u32le
+      } else {
+        tiff_magic:  u16be
+        ifd0_offset: u32be
+      }
+    }
+    tiff: bytes(size - pos)              # TIFF/Exif payload; ifd0_offset is relative to its first byte
+  } else {
+    payload: bytes(size - pos)           # e.g. XMP ("http://ns.adobe.com/xap/1.0/\0 ...")
+  }
+}
+
+type sos {
+  num_components: u8
+  components:     sos_component[num_components]
+  spectral_start: u8
+  spectral_end:   u8
+  bitfield { approx_high: bits(4); approx_low: bits(4) }
+}
+
+type sos_component {
+  id: u8
+  bitfield { dc_table: bits(4); ac_table: bits(4) }
+}

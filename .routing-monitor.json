@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "entry_points": [
+    "vein.py"
+  ],
+  "tests": [
+    "tests/test_packet.py"
+  ],
+  "documentation": [
+    "README.md"
+  ]
+}

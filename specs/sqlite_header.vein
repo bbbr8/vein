@@ -1,0 +1,49 @@
+# sqlite_header.vein - SQLite 3 database header (100 bytes) + freelist trunk chain via `at`
+#
+# first_trunk follows header.first_freelist_trunk; each trunk page lists its leaf pages and
+# links to the next trunk (recursive type; nesting limit 1000 trunks).
+# Page N starts at byte (N - 1) * page_bytes. database_size_pages is valid only when size_valid.
+endian be
+root file
+
+enum text_encoding { 1: utf8, 2: utf16le, 3: utf16be }
+
+type file {
+  header:      header
+  first_trunk: freelist_trunk at (header.first_freelist_trunk - 1) * header.page_bytes if header.first_freelist_trunk != 0
+}
+
+type header {
+  magic:                 bytes(16) == b"SQLite format 3\x00"
+  page_size:             u16                      # 1 means 65536
+  let page_bytes = page_size == 1 ? 65536 : page_size
+  write_version:         u8                       # 1 legacy, 2 WAL
+  read_version:          u8
+  reserved_space:        u8
+  max_payload_fraction:  u8 == 64
+  min_payload_fraction:  u8 == 32
+  leaf_payload_fraction: u8 == 32
+  file_change_counter:   u32
+  database_size_pages:   u32
+  first_freelist_trunk:  u32
+  freelist_count:        u32
+  schema_cookie:         u32
+  schema_format:         u32
+  default_cache_size:    u32
+  largest_root_btree:    u32                      # non-zero in auto/incremental vacuum mode
+  text_encoding:         u32 enum text_encoding
+  user_version:          u32
+  incremental_vacuum:    u32
+  application_id:        u32
+  reserved:              bytes(20)
+  version_valid_for:     u32
+  sqlite_version_number: u32
+  let size_valid = version_valid_for == file_change_counter
+}
+
+type freelist_trunk {
+  next_trunk: u32
+  leaf_count: u32
+  leaves:     u32[leaf_count]
+  next:       freelist_trunk at (next_trunk - 1) * _root.header.page_bytes if next_trunk != 0
+}

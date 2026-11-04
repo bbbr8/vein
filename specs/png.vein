@@ -1,0 +1,69 @@
+# png.vein - PNG signature + chunks (length, type, data, crc) until IEND; IHDR, tEXt, iTXt, tIME decoded
+#
+# crc_ok recomputes CRC-32 over type + data. trailing_bytes counts data after IEND (appended payloads).
+endian be
+root file
+
+enum png_color_type { 0: grayscale, 2: truecolor, 3: indexed, 4: grayscale_alpha, 6: truecolor_alpha }
+
+type file {
+  signature: bytes(8) == b"\x89PNG\r\n\x1a\n"
+  chunks:    chunk[] until _.type == "IEND"
+  let trailing_bytes = size - pos
+}
+
+type chunk {
+  length: u32
+  type:   str(4, "latin-1")
+  if type == "IHDR" {
+    ihdr: ihdr size(length)
+  } else if type == "tEXt" {
+    text: text_chunk size(length)
+  } else if type == "iTXt" {
+    itxt: itxt_chunk size(length)
+  } else if type == "tIME" {
+    time: time_chunk size(length)
+  } else {
+    data: bytes(length)
+  }
+  crc:    u32
+  let crc_ok = crc32(bytes_at(offsetof(type), length + 4)) == crc
+}
+
+type ihdr {
+  width:       u32
+  height:      u32
+  bit_depth:   u8
+  color_type:  u8 enum png_color_type
+  compression: u8
+  filter:      u8
+  interlace:   u8
+}
+
+type text_chunk {
+  keyword: cstr("latin-1")
+  text:    str(size - pos, "latin-1")
+}
+
+type itxt_chunk {
+  keyword:            cstr("latin-1")
+  compression_flag:   u8
+  compression_method: u8
+  language:           cstr("ascii")
+  translated_keyword: cstr("utf-8")
+  if compression_flag == 0 {
+    text: str(size - pos, "utf-8")
+  } else {
+    compressed: bytes(size - pos)
+    let text = decode(zlib(compressed), "utf-8")
+  }
+}
+
+type time_chunk {
+  year:   u16
+  month:  u8
+  day:    u8
+  hour:   u8
+  minute: u8
+  second: u8
+}
