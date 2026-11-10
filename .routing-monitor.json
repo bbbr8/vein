@@ -1,10 +1,13 @@
 {
   "version": 1,
   "entry_points": [
-    "vein.py"
+    "vein.py",
+    "vein_candidates.py"
   ],
   "tests": [
-    "tests/test_packet.py"
+    "tests/test_packet.py",
+    "tests/test_candidates.py",
+    "tests/test_hardening.py"
   ],
   "documentation": [
     "README.md"

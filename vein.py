@@ -66,6 +66,10 @@ class ParseError(Exception):
         super().__init__(f"{msg} (offset {offset} / 0x{offset:x}, at {path})")
 
 
+class ResourceLimitError(ParseError):
+    """The configured evaluation limit was reached; data validity remains open."""
+
+
 class AssertFailed(ParseError):
     """A field assertion (== / != / in) or an `assert` statement failed."""
 
@@ -1759,7 +1763,7 @@ class Schema:
                     if cnt < 0:
                         raise ParseError(f"negative array count {cnt}", rt.base + s.cur, path)
                     if cnt > lim:
-                        raise ParseError(f"array count {cnt} exceeds max_items {lim}", rt.base + s.cur, path)
+                        raise ResourceLimitError(f"array count {cnt} exceeds max_items {lim}", rt.base + s.cur, path)
                     for i in range(cnt):
                         n, v = elem(ctx, f"{path}[{i}]", None, i)
                         items.append(n)
@@ -1768,7 +1772,7 @@ class Schema:
                     i = 0
                     while s.cur < s.end:
                         if i >= lim:
-                            raise ParseError(f"array exceeds max_items {lim}", rt.base + s.cur, path)
+                            raise ResourceLimitError(f"array exceeds max_items {lim}", rt.base + s.cur, path)
                         at0 = s.cur
                         n, v = elem(ctx, f"{path}[{i}]", None, i)
                         if s.cur == at0:
@@ -1787,6 +1791,7 @@ class Schema:
                         try:
                             n, v = elem(ctx, f"{path}[{i}]", None, i)
                         except ParseError as ex:
+                            if isinstance(ex,ResourceLimitError):raise
                             s.cur = at0
                             node["stopped"] = {"reason": ex.msg, "offset": rt.base + at0,
                                                "error_offset": ex.offset, "error_path": ex.path}
@@ -1803,7 +1808,7 @@ class Schema:
                         i = 0
                         while True:
                             if i >= lim:
-                                raise ParseError(f"array exceeds max_items {lim}", rt.base + s.cur, path)
+                                raise ResourceLimitError(f"array exceeds max_items {lim}", rt.base + s.cur, path)
                             if rkind == "while":
                                 ctx.loop_index = i
                                 ctx.last = vals[-1] if vals else None
@@ -2096,7 +2101,7 @@ def _guard(op, name):
 
 def _parse_struct(rt, tdef, s, parent, path, index, fname=None):
     if rt.depth >= MAX_DEPTH:
-        raise ParseError(f"nesting deeper than {MAX_DEPTH} levels (recursive type '{tdef.name}'?)",
+        raise ResourceLimitError(f"nesting deeper than {MAX_DEPTH} levels (recursive type '{tdef.name}'?)",
                          rt.base + s.cur, path)
     rt.depth += 1
     start = s.cur

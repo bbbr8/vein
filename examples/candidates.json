@@ -1,0 +1,37 @@
+{
+  "candidates": [
+    {
+      "id": "big",
+      "source": "endian be\nroot packet\ntype packet {\n level: u16\n}\n"
+    },
+    {
+      "id": "little",
+      "source": "endian le\nroot packet\ntype packet {\n level: u16\n}\n"
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "valid",
+      "hex": "0102ff",
+      "checks": [
+        {
+          "pointer": "/fields/level/value",
+          "expected": 258
+        },
+        {
+          "pointer": "/fields/level/offset",
+          "expected": 0
+        },
+        {
+          "pointer": "/fields/level/size",
+          "expected": 2
+        }
+      ]
+    },
+    {
+      "id": "short",
+      "hex": "01",
+      "expect_error": true
+    }
+  ]
+}
