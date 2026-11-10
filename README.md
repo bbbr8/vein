@@ -24,3 +24,8 @@ The result identifies both complete inputs by SHA-256 and size, and reports adde
 ## Evaluation hardening
 
 Candidate packets accept `max_items` (1..100000, default 10000). Array/depth limits report `EVALUATION_LIMIT` and cannot pass a negative fixture. Even an `until eof_or_fail` array stopped by its item limit remains incomplete. A fixture can set `require_full_coverage:true` to reject undecoded byte ranges; coverage measures bytes touched by leaves, not bit coverage or meaning.
+
+## Local-only distribution
+
+Run the CLI or Python modules locally. No HTTP endpoint, hosting setup or provider
+account is required. [Public distribution policy](PUBLIC_DISTRIBUTION.md).

@@ -1,3 +1,15 @@
 __pycache__/
 ._*
 .DS_Store
+
+# Private local configuration and outputs
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.json
+outputs/
+.venv/
+__pycache__/
+*.pyc

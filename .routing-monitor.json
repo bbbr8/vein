@@ -7,9 +7,15 @@
   "tests": [
     "tests/test_packet.py",
     "tests/test_candidates.py",
-    "tests/test_hardening.py"
+    "tests/test_hardening.py",
+    "tests/test_public_distribution.py",
+    "tests/test_public_distribution.py"
   ],
   "documentation": [
     "README.md"
+  ],
+  "docs": [
+    "PUBLIC_DISTRIBUTION.md",
+    "PUBLIC_DISTRIBUTION.md"
   ]
 }
