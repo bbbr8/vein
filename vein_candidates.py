@@ -52,6 +52,39 @@ def coverage(tree,size):
             'undecoded_ranges':gaps,'scope':'bytes touched by decoded leaves; bit-level completeness is separate'}
 
 
+def compare_coverage(candidates):
+    """Sweep half-open gaps from the decoded-leaf coverage of accepted schemas."""
+    size = candidates[0][1]['input_bytes']
+    events = {0: 0, size: 0}
+    for index, (_, coverage_row) in enumerate(candidates):
+        for start, end in coverage_row['undecoded_ranges']:
+            for point in (start, end):
+                events[point] = events.get(point, 0) ^ (1 << index)
+    all_schemas = (1 << len(candidates)) - 1
+    covered = all_schemas
+    previous = common = missing = disputed = range_count = 0
+    ranges = []
+    for point, toggle in sorted(events.items()):
+        if not toggle and point != size:
+            continue
+        length = point - previous
+        if covered == all_schemas:
+            common += length
+        elif not covered:
+            missing += length
+        elif length:
+            disputed += length
+            range_count += 1
+            if len(ranges) < 128:
+                readers = [key for i, (key, _) in enumerate(candidates) if covered & (1 << i)]
+                ranges.append({'start': previous, 'end': point, 'decoded_by': readers})
+        previous = point
+        covered ^= toggle
+    return {'input_bytes': size, 'all_decoded_bytes': common, 'none_decoded_bytes': missing,
+            'disputed_bytes': disputed, 'disputed_ranges': ranges,
+            'omitted_range_count': range_count - len(ranges)}
+
+
 def compare(packet):
     if not isinstance(packet,dict):raise ValueError('Candidate packet must be an object')
     max_items=packet.get('max_items',10000)
@@ -117,9 +150,18 @@ def compare(packet):
         row['passed']=all(f['passed'] for f in row['fixtures'])
         results.append(row)
     accepted=[r['id'] for r in results if r['passed']]
+    comparison = []
+    passing = [row for row in results if row['passed']]
+    if len(passing) >= 2:
+        for index, (fixture, _, sha) in enumerate(prepared):
+            if fixture.get('expect_error', False):
+                continue
+            spans = [(row['id'], row['fixtures'][index]['coverage']) for row in passing]
+            comparison.append({'fixture': fixture['id'], 'input_sha256': sha,
+                               **compare_coverage(spans)})
     # Schema differences outside supplied checks remain open, even when outcomes agree.
     return {'schema':'vein.candidates.v1','state':'MATCHES_FIXTURES' if accepted else 'NO_MATCH',
-            'accepted':accepted,'candidates':results,'max_items':max_items,'fixture_sha256':hashlib.sha256(canonical(fixtures).encode()).hexdigest(),
+            'accepted':accepted,'candidates':results,'coverage_comparison':comparison,'max_items':max_items,'fixture_sha256':hashlib.sha256(canonical(fixtures).encode()).hexdigest(),
             'scope':'declared finite fixtures, expected values and decoded-byte coverage; no universal schema correctness'}
 
 

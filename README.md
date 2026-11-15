@@ -29,3 +29,10 @@ Candidate packets accept `max_items` (1..100000, default 10000). Array/depth lim
 
 Run the CLI or Python modules locally. No HTTP endpoint, hosting setup or provider
 account is required. [Public distribution policy](PUBLIC_DISTRIBUTION.md).
+
+When multiple schemas pass the packet, `coverage_comparison` locates bytes
+decoded by all, some, or none of them on each positive fixture. Disputed ranges
+use zero-based half-open offsets and name the schemas that read those bytes.
+Totals cover the full input. Up to 128 disputed ranges are shown per fixture,
+with an omitted-range count. Schemas can cover the same bytes and decode
+different values; keep the fixture's value checks for that distinction.

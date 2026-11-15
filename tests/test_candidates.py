@@ -35,3 +35,46 @@ class SchemaCandidates(unittest.TestCase):
     def test_overlapping_byte_ranges_and_unknown_tail(self):
         tree={'a':{'value':1,'offset':0,'size':2},'b':{'value':1,'offset':1,'size':2}}
         self.assertEqual(coverage(tree,4)['decoded_leaf_bytes'],3)
+
+    def test_competing_schemas_localize_the_disputed_byte(self):
+        packet = self.packet()
+        packet['candidates'] = [
+            {'id': 'prefix', 'source': 'root p\ntype p { tag: u8 }'},
+            {'id': 'longer', 'source': 'root p\ntype p { tag: u8\n next: u8 }'}]
+        packet['fixtures'] = [{'id': 'same-tag', 'hex': '010203', 'checks': [
+            {'pointer': '/fields/tag/value', 'expected': 1}]}]
+        result = compare(packet)
+        self.assertEqual(result['accepted'], ['prefix', 'longer'])
+        row = result['coverage_comparison'][0]
+        self.assertEqual((row['all_decoded_bytes'], row['disputed_bytes'], row['none_decoded_bytes']), (1, 1, 1))
+        self.assertEqual(row['disputed_ranges'], [{'start': 1, 'end': 2, 'decoded_by': ['longer']}])
+
+    def test_coverage_sweep_matches_bytewise_oracle(self):
+        from random import Random
+        from vein_candidates import compare_coverage
+        rng = Random(302)
+        for _ in range(40):
+            n = rng.randrange(20)
+            bits = [[rng.choice([True, False]) for i in range(n)] for j in range(4)]
+            candidates = []
+            for i, row in enumerate(bits):
+                gaps = [[j, j + 1] for j, value in enumerate(row) if not value]
+                candidates.append((str(i), {'undecoded_ranges': gaps, 'input_bytes': n}))
+            result = compare_coverage(candidates)
+            both = sum(all(col) for col in zip(*bits))
+            neither = sum(not any(col) for col in zip(*bits))
+            self.assertEqual((result['all_decoded_bytes'], result['none_decoded_bytes'],
+                              result['disputed_bytes']), (both, neither, n - both - neither))
+            for span in result['disputed_ranges']:
+                for j in range(span['start'], span['end']):
+                    self.assertEqual(span['decoded_by'], [str(i) for i in range(4) if bits[i][j]])
+
+    def test_disputed_range_cap_keeps_complete_totals(self):
+        from vein_candidates import compare_coverage
+        size = 600
+        entire = {'input_bytes': size, 'undecoded_ranges': []}
+        alternate = {'input_bytes': size, 'undecoded_ranges': [[i, i+1] for i in range(0, size, 2)]}
+        report = compare_coverage([('all', entire), ('alternating', alternate)])
+        self.assertEqual(report['disputed_bytes'], 300)
+        self.assertEqual(len(report['disputed_ranges']), 128)
+        self.assertEqual(report['omitted_range_count'], 172)
