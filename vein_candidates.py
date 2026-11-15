@@ -22,7 +22,8 @@ def pointer(value,path):
         if re.search(r'~(?![01])',key):raise ValueError('Invalid pointer escape')
         key=key.replace('~1','/').replace('~0','~')
         if isinstance(value,list):
-            if not key.isdigit() or len(key)>1 and key.startswith('0'):raise ValueError('Invalid array index')
+            if not re.fullmatch(r'0|[1-9][0-9]*', key):
+                raise ValueError('Invalid array index')
             value=value[int(key)]
         else:value=value[key]
     return value
