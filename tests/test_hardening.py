@@ -42,3 +42,12 @@ class DecoderHardening(unittest.TestCase):
         p=self.packet();p['fixtures']=[{'id':'q','hex':'','expect_error':True}]
         self.assertEqual(compare(p)['accepted'],['p'])
 
+
+    def test_only_ascii_array_indices_select_decoded_items(self):
+        packet = self.packet()
+        packet['candidates'][0]['source'] = 'root packet\ntype packet { values: u8[2] }'
+        check = packet['fixtures'][0]['checks'][0]
+        for index, accepted in [('1', ['p']), ('١', []), ('０１', [])]:
+            with self.subTest(index=index):
+                check.update(pointer=f'/fields/values/items/{index}/value', expected=255)
+                self.assertEqual(compare(packet)['accepted'], accepted)

@@ -29,3 +29,20 @@ Candidate packets accept `max_items` (1..100000, default 10000). Array/depth lim
 
 Run the CLI or Python modules locally. No HTTP endpoint, hosting setup or provider
 account is required. [Public distribution policy](PUBLIC_DISTRIBUTION.md).
+
+When multiple schemas pass the packet, `coverage_comparison` locates bytes
+decoded by all, some, or none of them on each positive fixture. Disputed ranges
+use zero-based half-open offsets and name the schemas that read those bytes.
+Totals cover the full input. Up to 128 disputed ranges are shown per fixture,
+with an omitted-range count. Schemas can cover the same bytes and decode
+different values; keep the fixture's value checks for that distinction.
+
+For a fixture with multiple passing schemas, `coverage_depth_bytes[k]` counts
+bytes decoded by exactly k schemas. `pair_disagreement_fraction` is the fraction
+of all (byte, unordered schema pair) combinations on which exactly one schema
+decoded the byte. An empty fixture has no such comparisons and reports null.
+
+`schema_pairs` identifies each pair of passing schemas and reports the number
+of bytes decoded by both, by either, and by exactly one. The Jaccard similarity
+is the exact intersection divided by the union. A pair decoding zero bytes
+has a null similarity. Agreement here concerns byte coverage only.

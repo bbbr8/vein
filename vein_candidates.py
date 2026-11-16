@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+from fractions import Fraction
 from pathlib import Path
 import vein
 
@@ -22,7 +23,8 @@ def pointer(value,path):
         if re.search(r'~(?![01])',key):raise ValueError('Invalid pointer escape')
         key=key.replace('~1','/').replace('~0','~')
         if isinstance(value,list):
-            if not key.isdigit() or len(key)>1 and key.startswith('0'):raise ValueError('Invalid array index')
+            if not re.fullmatch(r'0|[1-9][0-9]*', key):
+                raise ValueError('Invalid array index')
             value=value[int(key)]
         else:value=value[key]
     return value
@@ -49,6 +51,74 @@ def coverage(tree,size):
     if end<size:gaps.append([end,size])
     return {'input_bytes':size,'decoded_leaf_bytes':sum(hi-lo for lo,hi in merged),
             'undecoded_ranges':gaps,'scope':'bytes touched by decoded leaves; bit-level completeness is separate'}
+
+
+def pairwise_coverage(candidates, size):
+    """Count intersections using sorted, disjoint, half-open uncovered ranges."""
+    gap_sizes = [sum(end - start for start, end in row['undecoded_ranges'])
+                 for _, row in candidates]
+    pairs = []
+    for i, (left_id, left) in enumerate(candidates):
+        for j in range(i + 1, len(candidates)):
+            right_id, right = candidates[j]
+            a, b = left['undecoded_ranges'], right['undecoded_ranges']
+            x = y = shared_gap = 0
+            while x < len(a) and y < len(b):
+                lo, hi = a[x]
+                start, end = b[y]
+                shared_gap += max(0, min(hi, end) - max(lo, start))
+                if hi <= end:
+                    x += 1
+                if end <= hi:
+                    y += 1
+            union = size - shared_gap
+            intersection = size - gap_sizes[i] - gap_sizes[j] + shared_gap
+            pairs.append({'schemas': [left_id, right_id], 'intersection_bytes': intersection,
+                          'union_bytes': union, 'different_bytes': union - intersection,
+                          'jaccard_fraction': str(Fraction(intersection, union)) if union else None})
+    return pairs
+
+
+def compare_coverage(candidates):
+    """Sweep half-open gaps from the decoded-leaf coverage of accepted schemas."""
+    size = candidates[0][1]['input_bytes']
+    events = {0: 0, size: 0}
+    for index, (_, coverage_row) in enumerate(candidates):
+        for start, end in coverage_row['undecoded_ranges']:
+            for point in (start, end):
+                events[point] = events.get(point, 0) ^ (1 << index)
+    all_schemas = (1 << len(candidates)) - 1
+    covered = all_schemas
+    previous = common = missing = disputed = range_count = 0
+    ranges = []
+    # Slot k counts bytes decoded by exactly k accepted schemas.
+    depth_bytes = [0] * (len(candidates) + 1)
+    for point, toggle in sorted(events.items()):
+        if not toggle and point != size:
+            continue
+        length = point - previous
+        depth_bytes[covered.bit_count()] += length
+        if covered == all_schemas:
+            common += length
+        elif not covered:
+            missing += length
+        elif length:
+            disputed += length
+            range_count += 1
+            if len(ranges) < 128:
+                readers = [key for i, (key, _) in enumerate(candidates) if covered & (1 << i)]
+                ranges.append({'start': previous, 'end': point, 'decoded_by': readers})
+        previous = point
+        covered ^= toggle
+    count = len(candidates)
+    disagreements = sum(length * k * (count - k) for k, length in enumerate(depth_bytes))
+    opportunities = size * count * (count - 1) // 2
+    return {'schema_pairs': pairwise_coverage(candidates, size), 'coverage_depth_bytes': depth_bytes,
+            'disagreeing_byte_pairs': disagreements, 'compared_byte_pairs': opportunities,
+            'pair_disagreement_fraction': str(Fraction(disagreements, opportunities)) if opportunities else None,
+            'input_bytes': size, 'all_decoded_bytes': common, 'none_decoded_bytes': missing,
+            'disputed_bytes': disputed, 'disputed_ranges': ranges,
+            'omitted_range_count': range_count - len(ranges)}
 
 
 def compare(packet):
@@ -116,9 +186,18 @@ def compare(packet):
         row['passed']=all(f['passed'] for f in row['fixtures'])
         results.append(row)
     accepted=[r['id'] for r in results if r['passed']]
+    comparison = []
+    passing = [row for row in results if row['passed']]
+    if len(passing) >= 2:
+        for index, (fixture, _, sha) in enumerate(prepared):
+            if fixture.get('expect_error', False):
+                continue
+            spans = [(row['id'], row['fixtures'][index]['coverage']) for row in passing]
+            comparison.append({'fixture': fixture['id'], 'input_sha256': sha,
+                               **compare_coverage(spans)})
     # Schema differences outside supplied checks remain open, even when outcomes agree.
     return {'schema':'vein.candidates.v1','state':'MATCHES_FIXTURES' if accepted else 'NO_MATCH',
-            'accepted':accepted,'candidates':results,'max_items':max_items,'fixture_sha256':hashlib.sha256(canonical(fixtures).encode()).hexdigest(),
+            'accepted':accepted,'candidates':results,'coverage_comparison':comparison,'max_items':max_items,'fixture_sha256':hashlib.sha256(canonical(fixtures).encode()).hexdigest(),
             'scope':'declared finite fixtures, expected values and decoded-byte coverage; no universal schema correctness'}
 
 
