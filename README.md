@@ -36,3 +36,8 @@ use zero-based half-open offsets and name the schemas that read those bytes.
 Totals cover the full input. Up to 128 disputed ranges are shown per fixture,
 with an omitted-range count. Schemas can cover the same bytes and decode
 different values; keep the fixture's value checks for that distinction.
+
+For a fixture with multiple passing schemas, `coverage_depth_bytes[k]` counts
+bytes decoded by exactly k schemas. `pair_disagreement_fraction` is the fraction
+of all (byte, unordered schema pair) combinations on which exactly one schema
+decoded the byte. An empty fixture has no such comparisons and reports null.

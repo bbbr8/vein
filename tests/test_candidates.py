@@ -78,3 +78,21 @@ class SchemaCandidates(unittest.TestCase):
         self.assertEqual(report['disputed_bytes'], 300)
         self.assertEqual(len(report['disputed_ranges']), 128)
         self.assertEqual(report['omitted_range_count'], 172)
+
+class CoverageArithmetic(unittest.TestCase):
+    def test_depth_and_pair_disagreement(self):
+        from itertools import combinations
+        from fractions import Fraction
+        from vein_candidates import compare_coverage
+        schemas = [[1,1,1,0], [1,1,0,0], [1,0,0,0]]
+        def report(bits):
+            return compare_coverage([(str(i), dict(input_bytes=len(row),
+                        undecoded_ranges=[[j,j+1] for j,v in enumerate(row) if not v]))
+                        for i,row in enumerate(bits)])
+        actual = report(schemas)
+        mismatches = sum(x != y for a,b in combinations(schemas, 2) for x,y in zip(a,b))
+        self.assertEqual(actual['coverage_depth_bytes'], [1,1,1,1])
+        self.assertEqual(actual['disagreeing_byte_pairs'], mismatches)
+        self.assertEqual(actual['compared_byte_pairs'], 12)
+        self.assertEqual(Fraction(actual['pair_disagreement_fraction']), Fraction(1,3))
+        self.assertIsNone(report([[], []])['pair_disagreement_fraction'])

@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+from fractions import Fraction
 from pathlib import Path
 import vein
 
@@ -64,10 +65,13 @@ def compare_coverage(candidates):
     covered = all_schemas
     previous = common = missing = disputed = range_count = 0
     ranges = []
+    # Slot k counts bytes decoded by exactly k accepted schemas.
+    depth_bytes = [0] * (len(candidates) + 1)
     for point, toggle in sorted(events.items()):
         if not toggle and point != size:
             continue
         length = point - previous
+        depth_bytes[covered.bit_count()] += length
         if covered == all_schemas:
             common += length
         elif not covered:
@@ -80,7 +84,13 @@ def compare_coverage(candidates):
                 ranges.append({'start': previous, 'end': point, 'decoded_by': readers})
         previous = point
         covered ^= toggle
-    return {'input_bytes': size, 'all_decoded_bytes': common, 'none_decoded_bytes': missing,
+    count = len(candidates)
+    disagreements = sum(length * k * (count - k) for k, length in enumerate(depth_bytes))
+    opportunities = size * count * (count - 1) // 2
+    return {'coverage_depth_bytes': depth_bytes,
+            'disagreeing_byte_pairs': disagreements, 'compared_byte_pairs': opportunities,
+            'pair_disagreement_fraction': str(Fraction(disagreements, opportunities)) if opportunities else None,
+            'input_bytes': size, 'all_decoded_bytes': common, 'none_decoded_bytes': missing,
             'disputed_bytes': disputed, 'disputed_ranges': ranges,
             'omitted_range_count': range_count - len(ranges)}
 
