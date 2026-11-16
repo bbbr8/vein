@@ -96,3 +96,21 @@ class CoverageArithmetic(unittest.TestCase):
         self.assertEqual(actual['compared_byte_pairs'], 12)
         self.assertEqual(Fraction(actual['pair_disagreement_fraction']), Fraction(1,3))
         self.assertIsNone(report([[], []])['pair_disagreement_fraction'])
+
+    def test_pair_similarity_matches_set_oracle(self):
+        from itertools import combinations
+        from fractions import Fraction
+        import random
+        from vein_candidates import compare_coverage
+        rng = random.Random(41)
+        for n in [0,1,8,57]:
+            sets = [{i for i in range(n) if rng.randrange(2)} for _ in range(5)]
+            cover = [(str(k),dict(input_bytes=n,undecoded_ranges=[[i,i+1] for i in range(n) if i not in s]))
+                     for k,s in enumerate(sets)]
+            report = compare_coverage(cover)
+            for pair,(a,b) in zip(report['schema_pairs'],combinations(sets,2),strict=True):
+                self.assertEqual(pair['intersection_bytes'],len(a & b))
+                self.assertEqual(pair['different_bytes'],len(a ^ b))
+                self.assertEqual(pair['jaccard_fraction'],str(Fraction(len(a & b),len(a | b))) if a | b else None)
+            self.assertEqual(sum(pair['different_bytes'] for pair in report['schema_pairs']),
+                             report['disagreeing_byte_pairs'])

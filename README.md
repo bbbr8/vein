@@ -41,3 +41,8 @@ For a fixture with multiple passing schemas, `coverage_depth_bytes[k]` counts
 bytes decoded by exactly k schemas. `pair_disagreement_fraction` is the fraction
 of all (byte, unordered schema pair) combinations on which exactly one schema
 decoded the byte. An empty fixture has no such comparisons and reports null.
+
+`schema_pairs` identifies each pair of passing schemas and reports the number
+of bytes decoded by both, by either, and by exactly one. The Jaccard similarity
+is the exact intersection divided by the union. A pair decoding zero bytes
+has a null similarity. Agreement here concerns byte coverage only.

@@ -53,6 +53,32 @@ def coverage(tree,size):
             'undecoded_ranges':gaps,'scope':'bytes touched by decoded leaves; bit-level completeness is separate'}
 
 
+def pairwise_coverage(candidates, size):
+    """Count intersections using sorted, disjoint, half-open uncovered ranges."""
+    gap_sizes = [sum(end - start for start, end in row['undecoded_ranges'])
+                 for _, row in candidates]
+    pairs = []
+    for i, (left_id, left) in enumerate(candidates):
+        for j in range(i + 1, len(candidates)):
+            right_id, right = candidates[j]
+            a, b = left['undecoded_ranges'], right['undecoded_ranges']
+            x = y = shared_gap = 0
+            while x < len(a) and y < len(b):
+                lo, hi = a[x]
+                start, end = b[y]
+                shared_gap += max(0, min(hi, end) - max(lo, start))
+                if hi <= end:
+                    x += 1
+                if end <= hi:
+                    y += 1
+            union = size - shared_gap
+            intersection = size - gap_sizes[i] - gap_sizes[j] + shared_gap
+            pairs.append({'schemas': [left_id, right_id], 'intersection_bytes': intersection,
+                          'union_bytes': union, 'different_bytes': union - intersection,
+                          'jaccard_fraction': str(Fraction(intersection, union)) if union else None})
+    return pairs
+
+
 def compare_coverage(candidates):
     """Sweep half-open gaps from the decoded-leaf coverage of accepted schemas."""
     size = candidates[0][1]['input_bytes']
@@ -87,7 +113,7 @@ def compare_coverage(candidates):
     count = len(candidates)
     disagreements = sum(length * k * (count - k) for k, length in enumerate(depth_bytes))
     opportunities = size * count * (count - 1) // 2
-    return {'coverage_depth_bytes': depth_bytes,
+    return {'schema_pairs': pairwise_coverage(candidates, size), 'coverage_depth_bytes': depth_bytes,
             'disagreeing_byte_pairs': disagreements, 'compared_byte_pairs': opportunities,
             'pair_disagreement_fraction': str(Fraction(disagreements, opportunities)) if opportunities else None,
             'input_bytes': size, 'all_decoded_bytes': common, 'none_decoded_bytes': missing,
