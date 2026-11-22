@@ -124,7 +124,7 @@ def compare(packet):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('packet',type=Path);a=parser.parse_args()
-    try:result=compare(json.loads(a.packet.read_text()))
+    try:result=compare(json.loads(a.packet.read_text(encoding="utf-8-sig")))
     except (ValueError,KeyError,TypeError,OSError) as exc:parser.exit(2,str(exc)+'\n')
     print(json.dumps(result,indent=2));return 0 if result['accepted'] else 1
 
