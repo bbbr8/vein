@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Private - personal, financial, and mental-health data
 """Vein - a small declarative language for binary file structures.
 
 Every decoded value carries its exact byte anchor (offset, size, type).
@@ -2479,6 +2480,8 @@ def main(argv=None):
     ap.add_argument("--selftest", action="store_true", help="run the test suite and print passed/total")
     ap.add_argument("--version", action="version", version=f"vein {__version__}")
     sub = ap.add_subparsers(dest="cmd")
+    matrix = sub.add_parser("matmul", help="multiply exact JSON matrices")
+    matrix.add_argument("packet", help="JSON file or - for stdin")
     p = sub.add_parser("parse", help="parse FILE with SPEC (a path or a bundled spec name)")
     p.add_argument("spec")
     p.add_argument("file")
@@ -2496,6 +2499,9 @@ def main(argv=None):
     for arg in ("spec", "before", "after"):
         diff.add_argument(arg)
     args = ap.parse_args(argv)
+    if args.cmd == "matmul":
+        from matrix_math import run_packet
+        return run_packet(args.packet)
 
     if args.cmd == "diff":
         try:
